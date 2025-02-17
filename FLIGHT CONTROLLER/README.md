@@ -30,7 +30,5 @@
 | **ESC3 (Back-Left)**   | PA10 | TIM1_CH3 |
 | **ESC4 (Back-Right)**  | PA11 | TIM1_CH4 |
 
-> ⚡ **ESCs need external 12V-16V battery power** (not from STM32!). 
-> 🔹 Signal wires from ESCs connect to **STM32 PWM pins**.
 
 ---
