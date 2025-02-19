@@ -14,7 +14,7 @@ void loop() {
 
 
 
-//stm32
+//nano
 #include <SoftwareSerial.h>
 
 SoftwareSerial mySerial(2, 3); // RX, TX
