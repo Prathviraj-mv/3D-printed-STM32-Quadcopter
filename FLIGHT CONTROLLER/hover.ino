@@ -6,7 +6,6 @@
 Adafruit_BMP085_Unified bmp = Adafruit_BMP085_Unified(10085);
 
 #define SEALEVELPRESSURE_HPA (1013.25)
-#define BUTTON_PIN 7  // Define button pin
 
 float baselineAltitudeCM = 0.0;
 float RateRoll, RatePitch, RateYaw;
@@ -28,12 +27,11 @@ float prevErrorPitch = 0, integralPitch = 0;
 int minThrottle = 1000, maxThrottle = 2000;
 
 // Height control
-float targetAltitudeCM = 300.0;  // Adjustable hover altitude
+float targetAltitudeCM = 300.0;  // Variable for hover altitude (can be adjusted)
 float altitudeToleranceCM = 50.0; // Hover range between 250cm and 350cm
-unsigned long hoverDuration = 10000; // Hover duration in milliseconds
+unsigned long hoverDuration = 10000; // Hover duration in milliseconds (can be adjusted)
 bool hoverMode = false;
 unsigned long hoverStartTime = 0;
-bool takeoffInitiated = false;
 
 void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
   KalmanState = KalmanState + 0.004 * KalmanInput;
@@ -69,6 +67,11 @@ void updateMotors(float altitudeError) {
   analogWrite(A1, throttleA1);
   analogWrite(A2, throttleA2);
   analogWrite(A3, throttleA3);
+  
+  Serial.print("Throttle A0: "); Serial.println(throttleA0);
+  Serial.print("Throttle A1: "); Serial.println(throttleA1);
+  Serial.print("Throttle A2: "); Serial.println(throttleA2);
+  Serial.print("Throttle A3: "); Serial.println(throttleA3);
 }
 
 void setup() {
@@ -77,8 +80,6 @@ void setup() {
   pinMode(A1, OUTPUT);
   pinMode(A2, OUTPUT);
   pinMode(A3, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  
   Wire.setClock(400000);
   Wire.begin();
   delay(250);
@@ -101,12 +102,6 @@ void setup() {
 }
 
 void loop() {
-  if (digitalRead(BUTTON_PIN) == LOW && !takeoffInitiated) {
-    hoverMode = true;
-    hoverStartTime = millis();
-    takeoffInitiated = true;
-  }
-
   gyro_signals();
   RateRoll -= RateCalibrationRoll;
   RatePitch -= RateCalibrationPitch;
@@ -129,9 +124,13 @@ void loop() {
       }
     } else {
       hoverMode = false;
-      takeoffInitiated = false;
     }
   }
+  
+  Serial.print("Altitude: "); Serial.println(currentAltitude);
+  Serial.print("Altitude Error: "); Serial.println(altitudeError);
+  Serial.print("Roll: "); Serial.println(KalmanAngleRoll);
+  Serial.print("Pitch: "); Serial.println(KalmanAnglePitch);
   
   updateMotors(altitudeError);
   
