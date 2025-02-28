@@ -1,139 +1,182 @@
 #include <Wire.h>
+#include <MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP085_U.h>
+#include <Servo.h>
 
-// Create the BMP085 (or BMP180) object from the Unified library
-Adafruit_BMP085_Unified bmp = Adafruit_BMP085_Unified(10085);
+// Sensor and ESC Setup
+MPU6050 mpu;
+Adafruit_BMP085_Unified bmp(10085);
+Servo esc[4];
 
-#define SEALEVELPRESSURE_HPA (1013.25)
+// STM32 Pin Definitions
+#define LED_PIN         PC13
+#define BUTTON_PIN      PB0
+const uint8_t ESC_PINS[4] = {PA0, PA1, PA2, PA3};
 
-float baselineAltitudeCM = 0.0;
-float RateRoll, RatePitch, RateYaw;
-float RateCalibrationRoll, RateCalibrationPitch, RateCalibrationYaw;
-int RateCalibrationNumber;
-float AccX, AccY, AccZ;
-float AngleRoll, AnglePitch;
-uint32_t LoopTimer;
-float KalmanAngleRoll = 0, KalmanUncertaintyAngleRoll = 2 * 2;
-float KalmanAnglePitch = 0, KalmanUncertaintyAnglePitch = 2 * 2;
-float Kalman1DOutput[] = {0, 0};
-float PitchOffset = 23.2;
-float RollOffset = 0.0;
+// Flight Control Variables
+float roll = 0.0, pitch = 0.0, yaw = 0.0;
+float altitude = 0.0, groundAltitude = 0.0;
+bool altitudeCalibrated = false, droneActive = false, signalLost = false;
 
-// PID parameters
-float Kp = 1.2, Ki = 0.02, Kd = 0.5;
-float prevErrorRoll = 0, integralRoll = 0;
-float prevErrorPitch = 0, integralPitch = 0;
-int minThrottle = 1000, maxThrottle = 2000;
+// PID Variables
+float rollPID = 0.0, pitchPID = 0.0, yawPID = 0.0;
+float rollSetpoint = 0.0, pitchSetpoint = 0.0, yawSetpoint = 0.0;
+float rollError = 0.0, pitchError = 0.0, yawError = 0.0;
+float rollLastError = 0.0, pitchLastError = 0.0, yawLastError = 0.0;
+const float Kp = 1.2, Ki = 0.01, Kd = 0.5;
 
-// Height control
-float targetAltitudeCM = 300.0;  // Variable for hover altitude (can be adjusted)
-float altitudeToleranceCM = 50.0; // Hover range between 250cm and 350cm
-unsigned long hoverDuration = 10000; // Hover duration in milliseconds (can be adjusted)
-bool hoverMode = false;
-unsigned long hoverStartTime = 0;
+// Kalman Filter Variables
+float kalmanZ = 0.0, kalmanGain = 0.1;
 
-void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
-  KalmanState = KalmanState + 0.004 * KalmanInput;
-  KalmanUncertainty = KalmanUncertainty + 0.004 * 0.004 * 4 * 4;
-  float KalmanGain = KalmanUncertainty * 1 / (1 * KalmanUncertainty + 3 * 3);
-  KalmanState = KalmanState + KalmanGain * (KalmanMeasurement - KalmanState);
-  KalmanUncertainty = (1 - KalmanGain) * KalmanUncertainty;
-  Kalman1DOutput[0] = KalmanState; 
-  Kalman1DOutput[1] = KalmanUncertainty;
-}
+// Safety Limits
+const float MAX_ROLL = 45.0, MAX_PITCH = 45.0;
 
-float pidControl(float error, float &prevError, float &integral) {
-  integral += error * 0.004;
-  float derivative = (error - prevError) / 0.004;
-  prevError = error;
-  return Kp * error + Ki * integral + Kd * derivative;
-}
+// Button Debounce Variables
+bool lastButtonState = LOW;
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50;
 
-void updateMotors(float altitudeError) {
-  float rollError = -KalmanAngleRoll;
-  float pitchError = -KalmanAnglePitch;
-  
-  float rollCorrection = pidControl(rollError, prevErrorRoll, integralRoll);
-  float pitchCorrection = pidControl(pitchError, prevErrorPitch, integralPitch);
-  float altitudeCorrection = pidControl(altitudeError, prevErrorPitch, integralPitch);
-  
-  int throttleA0 = constrain(1500 + rollCorrection - pitchCorrection + altitudeCorrection, minThrottle, maxThrottle);
-  int throttleA1 = constrain(1500 - rollCorrection - pitchCorrection + altitudeCorrection, minThrottle, maxThrottle);
-  int throttleA2 = constrain(1500 + rollCorrection + pitchCorrection + altitudeCorrection, minThrottle, maxThrottle);
-  int throttleA3 = constrain(1500 - rollCorrection + pitchCorrection + altitudeCorrection, minThrottle, maxThrottle);
-  
-  analogWrite(A0, throttleA0);
-  analogWrite(A1, throttleA1);
-  analogWrite(A2, throttleA2);
-  analogWrite(A3, throttleA3);
-  
-  Serial.print("Throttle A0: "); Serial.println(throttleA0);
-  Serial.print("Throttle A1: "); Serial.println(throttleA1);
-  Serial.print("Throttle A2: "); Serial.println(throttleA2);
-  Serial.print("Throttle A3: "); Serial.println(throttleA3);
-}
+// Function Declarations
+void initSensors();
+void calibrateAltitude();
+float getAltitude();
+void readMPU();
+void applyKalmanFilter();
+void computePID();
+void executeCommand(char cmd);
+void emergencyLanding();
+void checkFailsafe();
+void controlMotors(float throttle, float rollAdjust, float pitchAdjust, float yawAdjust);
+bool readButton();
 
 void setup() {
-  Serial.begin(57600);
-  pinMode(A0, OUTPUT);
-  pinMode(A1, OUTPUT);
-  pinMode(A2, OUTPUT);
-  pinMode(A3, OUTPUT);
-  Wire.setClock(400000);
-  Wire.begin();
-  delay(250);
-  Wire.beginTransmission(0x68); 
-  Wire.write(0x6B);
-  Wire.write(0x00);
-  Wire.endTransmission();
-  for (RateCalibrationNumber = 0; RateCalibrationNumber < 2000; RateCalibrationNumber++) {
-    gyro_signals();
-    RateCalibrationRoll += RateRoll;
-    RateCalibrationPitch += RatePitch;
-    RateCalibrationYaw += RateYaw;
-    delay(1);
-  }
-  RateCalibrationRoll /= 2000;
-  RateCalibrationPitch /= 2000;
-  RateCalibrationYaw /= 2000;
-  baselineAltitudeCM = getAltitudeCM();
-  LoopTimer = micros();
+    Serial.begin(115200);
+    Wire.begin();
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+    for (uint8_t i = 0; i < 4; i++) {
+        esc[i].attach(ESC_PINS[i]);
+    }
+    initSensors();
 }
 
 void loop() {
-  gyro_signals();
-  RateRoll -= RateCalibrationRoll;
-  RatePitch -= RateCalibrationPitch;
-  RateYaw -= RateCalibrationYaw;
-  kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, RateRoll, AngleRoll);
-  KalmanAngleRoll = Kalman1DOutput[0]; 
-  KalmanUncertaintyAngleRoll = Kalman1DOutput[1];
-  kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, RatePitch, AnglePitch);
-  KalmanAnglePitch = Kalman1DOutput[0]; 
-  KalmanUncertaintyAnglePitch = Kalman1DOutput[1];
-  
-  float currentAltitude = getAltitudeCM();
-  float altitudeError = 0;
-  if (hoverMode) {
-    if (millis() - hoverStartTime < hoverDuration) {
-      if (currentAltitude < targetAltitudeCM - altitudeToleranceCM) {
-        altitudeError = targetAltitudeCM - currentAltitude;
-      } else if (currentAltitude > targetAltitudeCM + altitudeToleranceCM) {
-        altitudeError = targetAltitudeCM - currentAltitude;
-      }
-    } else {
-      hoverMode = false;
+    if (readButton()) {
+        droneActive = !droneActive;
+        if (!droneActive) {
+            controlMotors(0, 0, 0, 0);
+        }
+        delay(500);
     }
-  }
-  
-  Serial.print("Altitude: "); Serial.println(currentAltitude);
-  Serial.print("Altitude Error: "); Serial.println(altitudeError);
-  Serial.print("Roll: "); Serial.println(KalmanAngleRoll);
-  Serial.print("Pitch: "); Serial.println(KalmanAnglePitch);
-  
-  updateMotors(altitudeError);
-  
-  while (micros() - LoopTimer < 4000);
-  LoopTimer = micros();
+
+    if (!droneActive) return;
+
+    if (!altitudeCalibrated) calibrateAltitude();
+
+    readMPU();
+    altitude = getAltitude();
+    applyKalmanFilter();
+    computePID();
+    checkFailsafe();
+
+    Serial.print("ALTITUDE: "); Serial.print(altitude);
+    Serial.print(" | ROLL: "); Serial.print(roll);
+    Serial.print(" | PITCH: "); Serial.print(pitch);
+    Serial.print(" | YAW: "); Serial.println(yaw);
+
+    if (Serial.available()) executeCommand(Serial.read());
+    delay(20);
+}
+
+void initSensors() {
+    if (!mpu.testConnection()) while (1);
+    if (!bmp.begin()) while (1);
+}
+
+void calibrateAltitude() {
+    sensors_event_t event;
+    bmp.getEvent(&event);
+    if (event.pressure) {
+        groundAltitude = bmp.pressureToAltitude(SENSORS_PRESSURE_SEALEVELHPA, event.pressure);
+        altitudeCalibrated = true;
+    }
+}
+
+float getAltitude() {
+    sensors_event_t event;
+    bmp.getEvent(&event);
+    return event.pressure ? bmp.pressureToAltitude(SENSORS_PRESSURE_SEALEVELHPA, event.pressure) - groundAltitude : altitude;
+}
+
+void readMPU() {
+    int16_t ax, ay, az, gx, gy, gz;
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    roll  = ax / 16384.0;
+    pitch = ay / 16384.0;
+    yaw   = gz / 131.0;
+}
+
+void applyKalmanFilter() {
+    kalmanZ = kalmanGain * altitude + (1 - kalmanGain) * kalmanZ;
+}
+
+void computePID() {
+    rollError  = rollSetpoint - roll;
+    pitchError = pitchSetpoint - pitch;
+    yawError   = yawSetpoint - yaw;
+
+    rollPID  = Kp * rollError + Ki * (rollError + rollLastError) + Kd * (rollError - rollLastError);
+    pitchPID = Kp * pitchError + Ki * (pitchError + pitchLastError) + Kd * (pitchError - pitchLastError);
+    yawPID   = Kp * yawError + Ki * (yawError + yawLastError) + Kd * (yawError - yawLastError);
+
+    rollLastError  = rollError;
+    pitchLastError = pitchError;
+    yawLastError   = yawError;
+}
+
+void executeCommand(char cmd) {
+    switch (cmd) {
+        case 'W': rollSetpoint = 10.0; break;
+        case 'S': rollSetpoint = -10.0; break;
+        case 'A': pitchSetpoint = 10.0; break;
+        case 'D': pitchSetpoint = -10.0; break;
+        case 'U': controlMotors(70, 0, 0, 0); break;
+        case 'L': controlMotors(30, 0, 0, 0); break;
+        case 'H': Serial.println("Holding at 15ft..."); delay(5000); emergencyLanding(); break;
+        case 'C': Serial.println("Emergency Landing!"); emergencyLanding(); break;
+    }
+}
+
+void checkFailsafe() {
+    if (altitude <= 0 && (fabs(roll) > MAX_ROLL || fabs(pitch) > MAX_PITCH)) {
+        Serial.println("CRASH DETECTED! MOTORS SHUTDOWN!");
+        controlMotors(0, 0, 0, 0);
+        while (1);
+    }
+    if (signalLost) {
+        Serial.println("SIGNAL LOST! AUTO LANDING...");
+        emergencyLanding();
+    }
+}
+
+void emergencyLanding() {
+    controlMotors(30, 0, 0, 0);
+    delay(5000);
+    controlMotors(0, 0, 0, 0);
+}
+
+void controlMotors(float throttle, float rollAdjust, float pitchAdjust, float yawAdjust) {
+    esc[0].write(throttle + rollAdjust);
+    esc[1].write(throttle - rollAdjust);
+    esc[2].write(throttle + pitchAdjust);
+    esc[3].write(throttle - pitchAdjust);
+}
+
+bool readButton() {
+    bool reading = digitalRead(BUTTON_PIN);
+    if (reading != lastButtonState) lastDebounceTime = millis();
+    lastButtonState = reading;
+    return (millis() - lastDebounceTime) > debounceDelay && reading == HIGH;
 }
