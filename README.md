@@ -1,5 +1,4 @@
 # STM32-Quadcopter-with-Autonomous-Navigation
-STM32 Quadcopter with Autonomous Navigation 
 
 
 | <img src=""  width=60%> | <img src=""  width=60%> |
