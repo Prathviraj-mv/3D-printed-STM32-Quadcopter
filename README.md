@@ -14,4 +14,4 @@
 
 | <img src="IMAGES/COMBINED v1.png" > | <img src="IMAGES/COMBINED v12.png" > |
 | --------------------------- | --------------------------- |
-| <img src="IMAGES/IMG-20250222-WA0041.jpg" %>       | <img src=""> |
+| <img src="IMAGES/IMG-20250222-WA0041.jpg">       | <img src=""> |
