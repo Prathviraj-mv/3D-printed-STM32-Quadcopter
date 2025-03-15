@@ -4,6 +4,13 @@
 | <img src=""  width=60%> | <img src="IMAGES/VID_20250315131152.mp4"  width=60%> |
 | --------------------------- | --------------------------- |
 
+<p align="center">
+  <video src="IMAGES/VID_20250315131152.mp4" width="500px"></video>
+</p>
+
+<video src=" IMAGES/VID_20250315131152.mp4" width="320" height="240" controls></video>
+
+![non working video](IMAGES/VID_20250315131152.mp4)
 
 
 #  Flight controller and electronics
