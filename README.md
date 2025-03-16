@@ -1,7 +1,7 @@
 # STM32-Quadcopter-with-Autonomous-Navigation
 
 
-| <img src="IMAGES/IMG_20250316_211003.jpg"  width=100%> |
+| <img src="IMAGES/IMG_20250316_211003.jpg"  width=70%> |
 | --------------------------- | 
 
 
