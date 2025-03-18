@@ -66,9 +66,9 @@ void loop() {
   gyroAngleY += gyroY * dt;
   gyroAngleZ += gyroZ * dt;
 
-  // Complementary filter
-  float pitch = 0.96 * gyroAngleX + 0.04 * accAngleX;
-  float roll  = 0.96 * gyroAngleY + 0.04 * accAngleY;
+  // Complementary filter with swapped logic
+  float roll  = 0.96 * gyroAngleX + 0.04 * accAngleX;   // Was pitch, now roll
+  float pitch = 0.96 * gyroAngleY + 0.04 * accAngleY;   // Was roll, now pitch
   float yaw   = gyroAngleZ;  // only from gyro
 
   // Apply smoothing (low-pass filter)
@@ -76,11 +76,11 @@ void loop() {
   filteredRoll  = filteredRoll  * (1 - filterFactor) + roll  * filterFactor;
   filteredYaw   = filteredYaw   * (1 - filterFactor) + yaw   * filterFactor;
 
-  // Print stable values
-  Serial.print("Pitch: ");
-  Serial.print(filteredPitch, 2);
-  Serial.print(" | Roll: ");
+  // Print stable values with correct naming
+  Serial.print("Roll: ");
   Serial.print(filteredRoll, 2);
+  Serial.print(" | Pitch: ");
+  Serial.print(filteredPitch, 2);
   Serial.print(" | Yaw: ");
   Serial.println(filteredYaw, 2);
 
@@ -115,5 +115,11 @@ void calibrateForTwoSeconds() {
   gyroY_offset = gyroY_sum / (float)count;
   gyroZ_offset = gyroZ_sum / (float)count;
 
-
+  Serial.println("Auto Calibration Offsets:");
+  Serial.print("accX_offset: "); Serial.println(accX_offset);
+  Serial.print("accY_offset: "); Serial.println(accY_offset);
+  Serial.print("accZ_offset: "); Serial.println(accZ_offset);
+  Serial.print("gyroX_offset: "); Serial.println(gyroX_offset);
+  Serial.print("gyroY_offset: "); Serial.println(gyroY_offset);
+  Serial.print("gyroZ_offset: "); Serial.println(gyroZ_offset);
 }
