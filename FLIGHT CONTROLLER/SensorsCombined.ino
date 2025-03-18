@@ -1,155 +1,174 @@
-#include <Wire.h>                   // Library for I2C communication
-#include <Adafruit_Sensor.h>         // Unified sensor library
-#include <Adafruit_BMP085_U.h>       // Library for BMP180 pressure sensor
+#include <Wire.h>
+#include <MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP085_U.h>
 
-// Create the BMP180 sensor object
+// MPU6050 object
+MPU6050 mpu;
+
+// BMP180 object
 Adafruit_BMP085_Unified bmp = Adafruit_BMP085_Unified(10085);
+#define SEALEVELPRESSURE_HPA (1013.25)
 
-// Define the I2C address for MPU6050
-#define MPU6050_ADDR 0x68
+// Offsets and filter variables
+float accX_offset = 0, accY_offset = 0, accZ_offset = 0;
+float gyroX_offset = 0, gyroY_offset = 0, gyroZ_offset = 0;
+float gyroAngleX = 0, gyroAngleY = 0, gyroAngleZ = 0;
+float filteredPitch = 0, filteredRoll = 0, filteredYaw = 0;
+float filterFactor = 0.05;
+unsigned long previousTime = 0;
 
-// Define sea-level pressure in hPa for accurate altitude calculation
-#define SEALEVELPRESSURE_HPA 1013.25
-
-// Variables for storing gyroscope readings
-float RateRoll, RatePitch, RateYaw;
-float RateCalibrationRoll = 0, RateCalibrationPitch = 0, RateCalibrationYaw = 0;
-
-// Variables for accelerometer readings
-float AccX, AccY, AccZ;
-
-// Altitude calibration variable
+// BMP baseline altitude
 float baselineAltitudeCM = 0.0;
 
-// Kalman filter variables
-float kalmanAngleX = 0, kalmanAngleY = 0, kalmanAngleZ = 0, kalmanAltitude = 0;
-float biasX = 0, biasY = 0, biasZ = 0, biasAlt = 0;
-float P[2][2] = {{1, 0}, {0, 1}}; // Error covariance matrix
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
 
-// Function to initialize MPU6050
-void initMPU6050() {
-  Wire.beginTransmission(MPU6050_ADDR);
-  Wire.write(0x6B);   // Power management register
-  Wire.write(0x00);   // Wake up the sensor
-  Wire.endTransmission();
+  initializeMPU();
+  calibrateMPU();
 
-  Wire.beginTransmission(MPU6050_ADDR);
-  Wire.write(0x1A);   // Configuration register
-  Wire.write(0x05);   // Set low-pass filter
-  Wire.endTransmission();
+  initializeBMP();
+
+  previousTime = micros();
 }
 
-// Function to read gyro and accelerometer data from MPU6050
-void readMPU6050() {
-  Wire.beginTransmission(MPU6050_ADDR);
-  Wire.write(0x3B);   // Starting register for accelerometer data
-  Wire.endTransmission(false);
-  Wire.requestFrom(MPU6050_ADDR, 14, true);
+void loop() {
+  float dt = calculateDeltaTime();
 
-  // Read raw acceleration values
-  int16_t rawAccX = Wire.read() << 8 | Wire.read();
-  int16_t rawAccY = Wire.read() << 8 | Wire.read();
-  int16_t rawAccZ = Wire.read() << 8 | Wire.read();
+  int16_t ax, ay, az, gx, gy, gz;
+  readMPUData(ax, ay, az, gx, gy, gz);
 
-  // Read raw gyro values
-  int16_t rawGyroX = Wire.read() << 8 | Wire.read();
-  int16_t rawGyroY = Wire.read() << 8 | Wire.read();
-  int16_t rawGyroZ = Wire.read() << 8 | Wire.read();
+  updateAngles(ax, ay, az, gx, gy, gz, dt);
 
-  // Convert raw values to meaningful physical values
-  AccX = rawAccX / 16384.0; // Scale factor for ±2g
-  AccY = rawAccY / 16384.0;
-  AccZ = rawAccZ / 16384.0;
+  float altitude = detectUpwardMovementAndGetAltitude(az);
 
-  RateRoll = rawGyroX / 65.5; // Scale factor for ±500°/s
-  RatePitch = rawGyroY / 65.5;
-  RateYaw = rawGyroZ / 65.5;
+  printData(altitude);
+
+  delay(50);
 }
 
-// Function to apply Kalman filter
-float kalmanFilter(float newAngle, float newRate, float dt, float &angle, float &bias) {
-  float rate = newRate - bias;
-  angle += dt * rate;
-
-  // Update estimation error covariance
-  P[0][0] += dt * (dt * P[1][1] - P[0][1] - P[1][0] + 1);
-  P[0][1] -= dt * P[1][1];
-  P[1][0] -= dt * P[1][1];
-  P[1][1] += 0.003;
-
-  // Calculate Kalman gain
-  float S = P[0][0] + 0.03;
-  float K[2];
-  K[0] = P[0][0] / S;
-  K[1] = P[1][0] / S;
-
-  // Apply correction
-  float y = newAngle - angle;
-  angle += K[0] * y;
-  bias += K[1] * y;
-
-  // Update error covariance
-  float P00_temp = P[0][0];
-  float P01_temp = P[0][1];
-
-  P[0][0] -= K[0] * P00_temp;
-  P[0][1] -= K[0] * P01_temp;
-  P[1][0] -= K[1] * P00_temp;
-  P[1][1] -= K[1] * P01_temp;
-
-  return angle;
+// === Initialization Functions ===
+void initializeMPU() {
+  mpu.initialize();
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 connection failed.");
+    while (1);
+  }
+  Serial.println("MPU6050 connected and ready.");
 }
 
-// Function to get altitude from BMP180
+void initializeBMP() {
+  Serial.println(F("Initializing BMP180..."));
+  if (!bmp.begin()) {
+    Serial.println(F("BMP180 sensor not found!"));
+    while (1);
+  }
+  delay(1000);
+  baselineAltitudeCM = getAltitudeCM();
+  Serial.print("Baseline altitude set: ");
+  Serial.print(baselineAltitudeCM);
+  Serial.println(" cm");
+}
+
+// === Calibration ===
+void calibrateMPU() {
+  long accX_sum = 0, accY_sum = 0, accZ_sum = 0;
+  long gyroX_sum = 0, gyroY_sum = 0, gyroZ_sum = 0;
+  int count = 0;
+
+  Serial.println("Calibrating MPU... Hold still for 2 seconds.");
+
+  unsigned long startTime = millis();
+  while (millis() - startTime < 2000) {
+    int16_t ax, ay, az, gx, gy, gz;
+    mpu.getAcceleration(&ax, &ay, &az);
+    mpu.getRotation(&gx, &gy, &gz);
+
+    accX_sum += ax;
+    accY_sum += ay;
+    accZ_sum += az;
+    gyroX_sum += gx;
+    gyroY_sum += gy;
+    gyroZ_sum += gz;
+
+    count++;
+    delay(5);
+  }
+
+  accX_offset = accX_sum / (float)count;
+  accY_offset = accY_sum / (float)count;
+  accZ_offset = accZ_sum / (float)count;
+  gyroX_offset = gyroX_sum / (float)count;
+  gyroY_offset = gyroY_sum / (float)count;
+  gyroZ_offset = gyroZ_sum / (float)count;
+
+  Serial.println("Calibration Complete.");
+}
+
+// === Helper Functions ===
+float calculateDeltaTime() {
+  unsigned long currentTime = micros();
+  float dt = (currentTime - previousTime) / 1000000.0;
+  previousTime = currentTime;
+  return dt;
+}
+
+void readMPUData(int16_t &ax, int16_t &ay, int16_t &az, int16_t &gx, int16_t &gy, int16_t &gz) {
+  mpu.getAcceleration(&ax, &ay, &az);
+  mpu.getRotation(&gx, &gy, &gz);
+}
+
+void updateAngles(int16_t ax, int16_t ay, int16_t az, int16_t gx, int16_t gy, int16_t gz, float dt) {
+  float accX = (ax - accX_offset);
+  float accY = (ay - accY_offset);
+  float accZ = (az - accZ_offset);
+
+  float accAngleX = atan2(accY, sqrt(accX * accX + accZ * accZ)) * 180 / PI;
+  float accAngleY = atan2(-accX, sqrt(accY * accY + accZ * accZ)) * 180 / PI;
+
+  float gyroX = (gx - gyroX_offset) / 131.0;
+  float gyroY = (gy - gyroY_offset) / 131.0;
+  float gyroZ = (gz - gyroZ_offset) / 131.0;
+
+  gyroAngleX += gyroX * dt;
+  gyroAngleY += gyroY * dt;
+  gyroAngleZ += gyroZ * dt;
+
+  float roll = 0.96 * gyroAngleX + 0.04 * accAngleX;
+  float pitch = 0.96 * gyroAngleY + 0.04 * accAngleY;
+  float yaw = gyroAngleZ;
+
+  filteredRoll = filteredRoll * (1 - filterFactor) + roll * filterFactor;
+  filteredPitch = filteredPitch * (1 - filterFactor) + pitch * filterFactor;
+  filteredYaw = filteredYaw * (1 - filterFactor) + yaw * filterFactor;
+}
+
+float detectUpwardMovementAndGetAltitude(int16_t accZ) {
+  const float upwardThreshold = -1500;
+  if (accZ < upwardThreshold) {
+    return getAltitudeCM() - baselineAltitudeCM;
+  } else {
+    return 0;
+  }
+}
+
 float getAltitudeCM() {
   sensors_event_t event;
   bmp.getEvent(&event);
-
   if (event.pressure) {
     float temperature;
     bmp.getTemperature(&temperature);
     float altitudeM = bmp.pressureToAltitude(SEALEVELPRESSURE_HPA, event.pressure, temperature);
-    return altitudeM * 100.0; // Convert meters to centimeters
+    return altitudeM * 100.0;
   }
-  return 0.0; // Return 0 if sensor data is invalid
+  return 0;
 }
 
-void setup() {
-  Serial.begin(57600);   // Start serial communication
-  Wire.begin();          // Start I2C
-  initMPU6050();         // Initialize MPU6050
-
-  if (!bmp.begin()) {
-    Serial.println("BMP180 sensor not found!");
-    while (1);
-  }
-
-  delay(1000); // Allow sensor stabilization
-  baselineAltitudeCM = getAltitudeCM(); // Set zero altitude at startup
-  Serial.println("Drone initialized at 0m altitude.");
-}
-
-void loop() {
-  readMPU6050(); // Get IMU data
-
-  // Get altitude and apply Kalman filter
-  float currentAltitudeCM = getAltitudeCM();
-  kalmanAltitude = kalmanFilter(currentAltitudeCM, 0, 0.05, kalmanAltitude, biasAlt);
-
-  // Apply Kalman filter to roll, pitch, yaw
-  kalmanAngleX = kalmanFilter(AccX, RateRoll, 0.05, kalmanAngleX, biasX);
-  kalmanAngleY = kalmanFilter(AccY, RatePitch, 0.05, kalmanAngleY, biasY);
-  kalmanAngleZ = kalmanFilter(AccZ, RateYaw, 0.05, kalmanAngleZ, biasZ);
-
-  // Compute relative altitude from startup position
-  float relativeAltitudeCM = kalmanAltitude - baselineAltitudeCM;
-
-  // Print filtered data
-  Serial.print("Roll: "); Serial.print(kalmanAngleX);
-  Serial.print(" Pitch: "); Serial.print(kalmanAngleY);
-  Serial.print(" Yaw: "); Serial.print(kalmanAngleZ);
-  Serial.print(" Altitude: "); Serial.print(relativeAltitudeCM);
+void printData(float altitude) {
+  Serial.print("Roll: "); Serial.print(filteredRoll, 2);
+  Serial.print(" | Pitch: "); Serial.print(filteredPitch, 2);
+  Serial.print(" | Yaw: "); Serial.print(filteredYaw, 2);
+  Serial.print(" | Altitude: "); Serial.print(altitude, 2);
   Serial.println(" cm");
-
-  delay(50); // Short delay for loop stability
 }
