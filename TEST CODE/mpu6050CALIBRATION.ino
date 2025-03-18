@@ -1,75 +1,119 @@
-/*
-The contents of this code and instructions are the intellectual property of Carbon Aeronautics. 
-The text and figures in this code and instructions are licensed under a Creative Commons Attribution - Noncommercial - ShareAlike 4.0 International Public Licence. 
-This license lets you remix, adapt, and build upon your work non-commercially, as long as you credit Carbon Aeronautics 
-(but not in any way that suggests that we endorse you or your use of the work) and license your new creations under the identical terms.
-This code and instruction is provided "As Is” without any further warranty. Neither Carbon Aeronautics or the author has any liability to any person or entity 
-with respect to any loss or damage caused or declared to be caused directly or indirectly by the instructions contained in this code or by 
-the software and hardware described in it. As Carbon Aeronautics has no control over the use, setup, assembly, modification or misuse of the hardware, 
-software and information described in this manual, no liability shall be assumed nor accepted for any resulting damage or injury. 
-By the act of copying, use, setup or assembly, the user accepts all resulting liability.
-
-1.0  5 October 2022 -  initial release
-*/
-
 #include <Wire.h>
-float RateRoll, RatePitch, RateYaw;
-float RateCalibrationRoll, RateCalibrationPitch, RateCalibrationYaw;
-int RateCalibrationNumber;
-void gyro_signals(void) {
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1A);
-  Wire.write(0x05);
-  Wire.endTransmission(); 
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B);
-  Wire.write(0x08);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x43);
-  Wire.endTransmission(); 
-  Wire.requestFrom(0x68,6);
-  int16_t GyroX=Wire.read()<<8 | Wire.read();
-  int16_t GyroY=Wire.read()<<8 | Wire.read();
-  int16_t GyroZ=Wire.read()<<8 | Wire.read();
-  RateRoll=(float)GyroX/65.5;
-  RatePitch=(float)GyroY/65.5;
-  RateYaw=(float)GyroZ/65.5;
-}
+#include <MPU6050.h>
+
+MPU6050 mpu;
+
+// Manual offsets (you can adjust later if needed)
+float manual_accX_offset = 0;
+float manual_accY_offset = 0;
+float manual_accZ_offset = 0;
+float manual_gyroX_offset = 0;
+float manual_gyroY_offset = 0;
+float manual_gyroZ_offset = 0;
+
+// Auto-calculated offsets
+float accX_offset = 0, accY_offset = 0, accZ_offset = 0;
+float gyroX_offset = 0, gyroY_offset = 0, gyroZ_offset = 0;
+
+float gyroAngleX = 0, gyroAngleY = 0, gyroAngleZ = 0;
+unsigned long previousTime = 0;
+
+// Filtered values
+float filteredPitch = 0, filteredRoll = 0, filteredYaw = 0;
+float filterFactor = 0.05;  // Lower = smoother, but slower response
+
 void setup() {
-  Serial.begin(57600);
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);
-  Wire.setClock(400000);
+  Serial.begin(9600);
   Wire.begin();
-  delay(250);
-  Wire.beginTransmission(0x68); 
-  Wire.write(0x6B);
-  Wire.write(0x00);
-  Wire.endTransmission();
-  for (RateCalibrationNumber=0;
-         RateCalibrationNumber<2000; 
-         RateCalibrationNumber ++) {
-    gyro_signals();
-    RateCalibrationRoll+=RateRoll;
-    RateCalibrationPitch+=RatePitch;
-    RateCalibrationYaw+=RateYaw;
-    delay(1);
+  mpu.initialize();
+
+  if (mpu.testConnection()) {
+    Serial.println("MPU6050 connected.");
+  } else {
+    Serial.println("MPU6050 connection failed.");
+    while (1);
   }
-  RateCalibrationRoll/=2000;
-  RateCalibrationPitch/=2000;
-  RateCalibrationYaw/=2000;   
+
+  delay(2000);
+  Serial.println("Calibrating for 2 seconds... Keep MPU6050 still.");
+  calibrateForTwoSeconds();
+  Serial.println("Calibration done. Starting data read...");
+  previousTime = micros();
 }
+
 void loop() {
-  gyro_signals();
-  RateRoll-=RateCalibrationRoll;
-  RatePitch-=RateCalibrationPitch;
-  RateYaw-=RateCalibrationYaw;
-  Serial.print("Roll rate [°/s]= ");
-  Serial.print(RateRoll); 
-  Serial.print(" Pitch Rate [°/s]= ");
-  Serial.print(RatePitch);
-  Serial.print(" Yaw Rate [°/s]= ");
-  Serial.println(RateYaw);
-  delay(50);
+  unsigned long currentTime = micros();
+  float dt = (currentTime - previousTime) / 1000000.0; 
+  previousTime = currentTime;
+
+  int16_t ax, ay, az, gx, gy, gz;
+  mpu.getAcceleration(&ax, &ay, &az);
+  mpu.getRotation(&gx, &gy, &gz);
+
+  float accX = (ax - accX_offset - manual_accX_offset);
+  float accY = (ay - accY_offset - manual_accY_offset);
+  float accZ = (az - accZ_offset - manual_accZ_offset);
+  float gyroX = (gx - gyroX_offset - manual_gyroX_offset) / 131.0;  
+  float gyroY = (gy - gyroY_offset - manual_gyroY_offset) / 131.0;
+  float gyroZ = (gz - gyroZ_offset - manual_gyroZ_offset) / 131.0;
+
+  // Calculate accelerometer angles
+  float accAngleX = atan2(accY, sqrt(accX * accX + accZ * accZ)) * 180 / PI;
+  float accAngleY = atan2(-accX, sqrt(accY * accY + accZ * accZ)) * 180 / PI;
+
+  // Integrate gyro
+  gyroAngleX += gyroX * dt;
+  gyroAngleY += gyroY * dt;
+  gyroAngleZ += gyroZ * dt;
+
+  // Complementary filter
+  float pitch = 0.96 * gyroAngleX + 0.04 * accAngleX;
+  float roll  = 0.96 * gyroAngleY + 0.04 * accAngleY;
+  float yaw   = gyroAngleZ;  // only from gyro
+
+  // Apply smoothing (low-pass filter)
+  filteredPitch = filteredPitch * (1 - filterFactor) + pitch * filterFactor;
+  filteredRoll  = filteredRoll  * (1 - filterFactor) + roll  * filterFactor;
+  filteredYaw   = filteredYaw   * (1 - filterFactor) + yaw   * filterFactor;
+
+  // Print stable values
+  Serial.print("Pitch: ");
+  Serial.print(filteredPitch, 2);
+  Serial.print(" | Roll: ");
+  Serial.print(filteredRoll, 2);
+  Serial.print(" | Yaw: ");
+  Serial.println(filteredYaw, 2);
+
+  delay(10);
+}
+
+void calibrateForTwoSeconds() {
+  long accX_sum = 0, accY_sum = 0, accZ_sum = 0;
+  long gyroX_sum = 0, gyroY_sum = 0, gyroZ_sum = 0;
+  unsigned long startTime = millis();
+  int count = 0;
+
+  while (millis() - startTime < 2000) {  // Collect samples for 2 seconds
+    int16_t ax, ay, az, gx, gy, gz;
+    mpu.getAcceleration(&ax, &ay, &az);
+    mpu.getRotation(&gx, &gy, &gz);
+
+    accX_sum += ax;
+    accY_sum += ay;
+    accZ_sum += az;
+    gyroX_sum += gx;
+    gyroY_sum += gy;
+    gyroZ_sum += gz;
+    count++;
+    delay(5);
+  }
+
+  accX_offset = accX_sum / (float)count;
+  accY_offset = accY_sum / (float)count;
+  accZ_offset = accZ_sum / (float)count;
+  gyroX_offset = gyroX_sum / (float)count;
+  gyroY_offset = gyroY_sum / (float)count;
+  gyroZ_offset = gyroZ_sum / (float)count;
+
+
 }
