@@ -27,12 +27,12 @@ float biasX = 0, biasY = 0, biasZ = 0, biasAlt = 0;
 float P[2][2] = {{1, 0}, {0, 1}}; // Error covariance matrix
 
 // Function to initialize MPU6050
-def initMPU6050() {
+void initMPU6050() {
   Wire.beginTransmission(MPU6050_ADDR);
   Wire.write(0x6B);   // Power management register
   Wire.write(0x00);   // Wake up the sensor
   Wire.endTransmission();
-  
+
   Wire.beginTransmission(MPU6050_ADDR);
   Wire.write(0x1A);   // Configuration register
   Wire.write(0x05);   // Set low-pass filter
@@ -40,7 +40,7 @@ def initMPU6050() {
 }
 
 // Function to read gyro and accelerometer data from MPU6050
-def readMPU6050() {
+void readMPU6050() {
   Wire.beginTransmission(MPU6050_ADDR);
   Wire.write(0x3B);   // Starting register for accelerometer data
   Wire.endTransmission(false);
@@ -118,7 +118,7 @@ void setup() {
   Serial.begin(57600);   // Start serial communication
   Wire.begin();          // Start I2C
   initMPU6050();         // Initialize MPU6050
-  
+
   if (!bmp.begin()) {
     Serial.println("BMP180 sensor not found!");
     while (1);
@@ -150,6 +150,6 @@ void loop() {
   Serial.print(" Yaw: "); Serial.print(kalmanAngleZ);
   Serial.print(" Altitude: "); Serial.print(relativeAltitudeCM);
   Serial.println(" cm");
-  
+
   delay(50); // Short delay for loop stability
 }
