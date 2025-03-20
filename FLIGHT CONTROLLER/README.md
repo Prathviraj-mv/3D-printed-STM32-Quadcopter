@@ -5,7 +5,7 @@
 
 
 
-### 2. **MPU6050 Connections**
+### 1. **MPU6050 Connections**
 | MPU6050 Pin | Connect To STM32 |
 |-------------|------------------|
 | VCC         | 3.3V (not 5V)    |
@@ -15,7 +15,7 @@
 
 ---
 
-### 3. **BMP180 Connections**
+### 2. **BMP180 Connections**
 | BMP180 Pin  | Connect To STM32 |
 |--------------|------------------|
 | VCC          | 3.3V             |
@@ -24,3 +24,11 @@
 | SDA          | PB9 (shared with MPU6050 SDA) |
 
 ---
+### 3. **ESC**
+
+| MOTOR        | ESC              |
+|--------------|------------------|
+| 1          | PB8             |
+| 2          |  PA15          |
+| 3          |  PB6 |
+| 4          | PA7  |
