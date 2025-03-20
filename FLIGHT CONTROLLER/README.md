@@ -1,6 +1,7 @@
+# STM32 BLACKPILL
 ![image](https://github.com/user-attachments/assets/b69bff74-bfac-4742-854b-530741030c5f)
 
-Here’s how you can connect the **BMP180** and **MPU6050** to an **STM32F411 Black Pill** (or similar STM32 board) via I2C:  
+
 
 
 
