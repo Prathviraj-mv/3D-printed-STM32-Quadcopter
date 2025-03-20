@@ -10,8 +10,8 @@
 |-------------|------------------|
 | VCC         | 3.3V (not 5V)    |
 | GND         | GND              |
-| SCL         | PB8 (I2C1_SCL)   |
-| SDA         | PB9 (I2C1_SDA)   |
+| SCL         | PB6 (I2C1_SCL)   |
+| SDA         | PB7 (I2C1_SDA)   |
 
 ---
 
