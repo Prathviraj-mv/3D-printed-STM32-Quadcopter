@@ -1,10 +1,10 @@
 // ROLL
 
-float roll_angle; 
-float roll_setpoint;
+float roll_angle; // from mpu
+float roll_setpoint; //from transmitter
 float throttle;
 
-float error, previous_error = 0, integral = 0, derivative, output;
+float error, previous_error = 0, integral = 0, derivative, output; // pid variables
 float Kp = 3.0, Ki = 0.02, Kd = 8.0;
 unsigned long prevTime;
 
@@ -15,10 +15,10 @@ void setup() {
 
 void loop() {
   // Get roll_angle from MPU6050
-  roll_angle = getRollAngle();  // Your custom function
+  roll_angle = getRollAngle();  // Your custom function  get value from mpu
   
   // Read roll_setpoint and throttle from receiver
-  roll_setpoint = map(roll_pwm_input, 1000, 2000, -30, 30); 
+  roll_setpoint = map(roll_pwm_input, 1000, 2000, -30, 30); // map throttle
   throttle = map(throttle_pwm_input, 1000, 2000, 1100, 1900); // Esc-safe range
   
   // Calculate PID
