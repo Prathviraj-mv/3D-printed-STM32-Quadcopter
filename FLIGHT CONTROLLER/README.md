@@ -20,8 +20,8 @@
 |--------------|------------------|
 | VCC          | 3.3V             |
 | GND          | GND              |
-| SCL          | PB8 (shared with MPU6050 SCL) |
-| SDA          | PB9 (shared with MPU6050 SDA) |
+| SCL          | PB6 (shared with MPU6050 SCL) |
+| SDA          | PB7 (shared with MPU6050 SDA) |
 
 ---
 ### 3. **CHANNEL**
