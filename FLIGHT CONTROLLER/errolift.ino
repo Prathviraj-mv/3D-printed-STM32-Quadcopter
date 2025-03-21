@@ -9,12 +9,12 @@ MPU6050 mpu;
 // Roll PID variables
 float rollAngle;
 float roll_error, roll_prev_error = 0, roll_integral = 0, roll_derivative, roll_output;
-float Kp_roll = 3.0, Ki_roll = 0.02, Kd_roll = 8.0;
+float Kp_roll = 3.0, Ki_roll = 0.01, Kd_roll = 0.0;
 
 // Pitch PID variables
 float  pitchAngle;
 float pitch_error, pitch_prev_error = 0, pitch_integral = 0, pitch_derivative, pitch_output;
-float Kp_pitch = 3.0, Ki_pitch = 0.02, Kd_pitch = 8.0;
+float Kp_pitch = 3.0, Ki_pitch = 0.01, Kd_pitch = 0.0;
 
 unsigned long prevTime = 0;
 
