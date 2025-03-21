@@ -23,15 +23,6 @@
 | SCL          | PB6 (shared with MPU6050 SCL) |
 | SDA          | PB7 (shared with MPU6050 SDA) |
 
----
-### 3. **CHANNEL**
-
-| CHANNEL        | PINS              |
-|--------------|------------------|
-| 1          | PB8             |
-| 2          |  PA15          |
-| 3          |  PB6 |
-| 4          | PA7  |
 
 ---
 ### 3. **ESC**
