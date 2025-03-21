@@ -3,7 +3,7 @@
 
 #define NUM_CHANNELS 4  // Channels for Throttle, Roll, Pitch, Yaw
 #define NUM_MOTORS 4    // Motors M1, M2, M3, M4
-
+#define LED PC13
 MPU6050 mpu;
 
 // Roll PID variables
@@ -101,10 +101,10 @@ void computePID() {
 
 void motorMixing(int throttle) {
   // 4-motor mixing (X configuration)
-  int motor1 = throttle + pitch_output + roll_output;   // Front Right
-  int motor2 = throttle + pitch_output - roll_output;   // Front Left
-  int motor3 = throttle - pitch_output - roll_output;   // Rear Left
-  int motor4 = throttle - pitch_output + roll_output;   // Rear Right
+  int motor2 = throttle + pitch_output + roll_output;   // Front Right
+  int motor3 = throttle + pitch_output - roll_output;   // Front Left
+  int motor4 = throttle - pitch_output - roll_output;   // Rear Left
+  int motor1 = throttle - pitch_output + roll_output;   // Rear Right
 
   motor1 = constrain(motor1, 1100, 1900);
   motor2 = constrain(motor2, 1100, 1900);
@@ -120,6 +120,7 @@ void motorMixing(int throttle) {
 
 void setup() {
     Serial.begin(115200);
+    pinMode(LED, OUTPUT);
     Wire.begin();
     mpu.initialize();
     if (!mpu.testConnection()) {
@@ -139,6 +140,8 @@ void setup() {
 }
 
 void loop() {
+    digitalWrite(LED, HIGH); // Turn the LED on
+
     unsigned long currentTime = millis();
     dt = (currentTime - previousTime) / 1000.0;
     previousTime = currentTime;
@@ -185,4 +188,6 @@ void loop() {
     Serial.print(" | Yaw Rate: "); Serial.println(yawRate, 2);
     
     delay(10);
+    digitalWrite(LED, LOW); // Turn the LED on
+
 }
