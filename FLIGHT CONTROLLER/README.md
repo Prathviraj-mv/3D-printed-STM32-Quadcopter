@@ -43,3 +43,5 @@
 | 3          |  PB0 |
 | 4          | PA6 |
 ---
+
+![image](https://github.com/user-attachments/assets/6de8fd13-25d3-431f-9b96-bfad538aea5a)
